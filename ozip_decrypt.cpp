@@ -14,12 +14,11 @@
 	GNU General Public License <http://www.gnu.org/licenses/>.
 */
 
+#define _FILE_OFFSET_BITS 64
 #include <iostream>
 #include <string.h>
 #include <openssl/evp.h>
 #include <openssl/ssl.h>
-#define _FILE_OFFSET_BITS 64
-//extern "C" __int64 __cdecl _ftelli64(FILE*);
 
 using namespace std;
 typedef std::basic_string<unsigned char> u_string;
@@ -123,30 +122,30 @@ int main(int argc, char* argv[])
 	fseek(fp, 0L, SEEK_END);
 	unsigned long int sizetot = ftello(fp);
 	fseek(fp, 4176, SEEK_SET);
-	int bdata[16384];
-	unsigned long int sizeseek;
+	u_string keybytes = (unsigned char*)(hexToASCII(key)).c_str();
+	EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+	EVP_DecryptInit_ex(ctx, EVP_aes_128_ecb(), NULL, keybytes.c_str(), NULL);
+	EVP_CIPHER_CTX_set_padding(ctx, false);
+	const unsigned long int bufsize = 1640000;
+	unsigned char* buf = (unsigned char*)malloc(bufsize);
+	unsigned long int remaining = sizetot - 4176;
 	printf("Decrypting...\n");
-	while (true)
+	while (remaining > 0)
 	{
-		unsigned char data[17];
-		fread(data, sizeof(char), 16, fp);
-		decrypt(data, sizeof(data), (unsigned char*)(hexToASCII(key)).c_str(), NULL, data);
-		fwrite(data, sizeof(char), 16, fp2);
-		sizeseek = ftello(fp);
-		if ((sizetot - sizeseek) <= 16384) {
-			fread(bdata, sizeof(char), (sizetot - sizeseek), fp);
-			fwrite(bdata, sizeof(char), (sizetot - sizeseek), fp2);
-			break;
-		}
-		else
+		unsigned long int chunk = remaining < bufsize ? remaining : bufsize;
+		fread(buf, 1, chunk, fp);
+		for (unsigned long int i = 0; i + 16 <= chunk; i += 16400)
 		{
-			fread(bdata, sizeof(char), 16384, fp);
-			fwrite(bdata, sizeof(char), 16384, fp2);
+			int len;
+			EVP_DecryptUpdate(ctx, buf + i, &len, buf + i, 16);
 		}
+		fwrite(buf, 1, chunk, fp2);
+		remaining -= chunk;
 	}
+	EVP_CIPHER_CTX_free(ctx);
+	free(buf);
 	printf("File succesfully decrypted, saved in %s\n", destpath);
 	fclose(fp2);
 	fclose(fp);
 	return 0;
 }
-
